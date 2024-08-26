@@ -34,6 +34,16 @@ write_files:
           include /etc/nginx/sites-enabled/*;
       }
       stream {
+          upstream postgres_backend {
+            server 172.16.16.73:31432;
+            server 172.16.16.40:31432;
+            server 172.16.16.37:31432;
+          }
+
+        server {
+            listen 5432;
+            proxy_pass postgres_backend;
+        }
           upstream redis_backend {
               server 172.16.16.73:30379;
               server 172.16.16.40:30379;
