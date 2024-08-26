@@ -1,0 +1,74 @@
+#cloud-config
+hostname: nginx-lb-01
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - gnupg2
+  - ca-certificates
+  - lsb-release
+  - ubuntu-keyring
+
+write_files:
+  - path: /etc/nginx/nginx.conf
+    content: |
+      user www-data;
+      worker_processes auto;
+      pid /run/nginx.pid;
+      include /etc/nginx/modules-enabled/*.conf;
+
+      events {
+          worker_connections 768;
+      }
+
+      http {
+          sendfile on;
+          tcp_nopush on;
+          types_hash_max_size 2048;
+          include /etc/nginx/mime.types;
+          default_type application/octet-stream;
+          ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;
+          ssl_prefer_server_ciphers on;
+          access_log /var/log/nginx/access.log;
+          error_log /var/log/nginx/error.log;
+          gzip on;
+          include /etc/nginx/conf.d/*.conf;
+          include /etc/nginx/sites-enabled/*;
+      }
+
+      stream {
+          upstream redis_backend {
+              server 172.16.16.73:30379;
+              server 172.16.16.40:30379;
+              server 172.16.16.37:30379;
+          }
+
+          server {
+              listen 6379;
+              proxy_pass redis_backend;
+          }
+      }
+
+  - path: /etc/apt/preferences.d/99nginx
+    content: |
+      Package: *
+      Pin: origin nginx.org
+      Pin: release o=nginx
+      Pin-Priority: 900
+
+users:
+  - name: chris
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC53fIFq5+zidgu0GNDGq2tDdJRXHgglsCWG/rPliOWxiVqbJQI3G/kJcQp+DtPI/sCzSl427nNsM+TG4K6h6h7pU3812Ng0WHXx5UyFqjklOQe/F1UygVg3jt0XfcbHFk9EIvcTbhxDfotW30XjAtW8PrT/nLzKIcwTkBYLm2C7abs3kxby69XGBUsHuDSaea2XE3/BGaNSXOBa0SPCxurChV8Gf/UJTqQDG6Yin04EHbQoEnwF9h+7rRUju3JVyqhMwTwMUiyRHlq//NmeeKQZTzD1Va2pMtBTkFs6XfuBCiysE2gg34srvvbQGDK22MV+SbBHqRVPJKDMGBF/AOSamjRYddwEx+CW+GZKcFeTwDVUe1wlEs9JNx3liOt0tPpDNTQDuGUCWqXeLNROai5jHDDS91j9OLh9Uv81kihg2wqM0c1aLx5dJfsc/zf7AKh5uzscsreU7wS0OsXzz4avoB0Nk0hpvpEnbs/WrZpdk+t4DghmeYda9v7168Nzhk=
+
+runcmd:
+  - curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
+  - echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu `lsb_release -cs` nginx" | sudo tee /etc/apt/sources.list.d/nginx.list
+  - sudo apt update
+  - sudo apt install -y nginx
+  - sudo systemctl start nginx
+  - sudo nginx -t
+  - sudo systemctl restart nginx
