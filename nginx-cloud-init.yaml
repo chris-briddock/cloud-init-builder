@@ -16,11 +16,9 @@ write_files:
       worker_processes auto;
       pid /run/nginx.pid;
       include /etc/nginx/modules-enabled/*.conf;
-
       events {
           worker_connections 768;
       }
-
       http {
           sendfile on;
           tcp_nopush on;
@@ -35,17 +33,35 @@ write_files:
           include /etc/nginx/conf.d/*.conf;
           include /etc/nginx/sites-enabled/*;
       }
-
       stream {
           upstream redis_backend {
               server 172.16.16.73:30379;
               server 172.16.16.40:30379;
               server 172.16.16.37:30379;
           }
-
           server {
               listen 6379;
               proxy_pass redis_backend;
+          }
+          
+          upstream rabbitmq_amqp_backend {
+              server 172.16.16.73:31015;
+              server 172.16.16.40:31015;
+              server 172.16.16.37:31015;
+          }
+          server {
+              listen 5672;
+              proxy_pass rabbitmq_amqp_backend;
+          }
+          
+          upstream rabbitmq_mgmt_backend {
+              server 172.16.16.73:31876;
+              server 172.16.16.40:31876;
+              server 172.16.16.37:31876;
+          }
+          server {
+              listen 15672;
+              proxy_pass rabbitmq_mgmt_backend;
           }
       }
 
