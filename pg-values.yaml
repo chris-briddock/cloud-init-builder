@@ -1,0 +1,32 @@
+global:
+  storageClass: "nfs-client"  # Replace with your storage class
+
+auth:
+  postgresPassword: "YourStrong@Passw0rd"
+  replicationPassword: "YourStrongRepl@Passw0rd"
+  username: "pguser"
+  password: "YourStrong@Passw0rd"
+  database: "pguser"
+
+architecture: replication
+
+primary:
+  persistence:
+    size: 10Gi
+
+readReplicas:
+  replicaCount: 2  # This gives us 3 nodes total (1 primary + 2 replicas)
+  persistence:
+    size: 10Gi
+
+service:
+  type: NodePort
+  nodePorts:
+    postgresql: "31434"  # Leave empty for random assignment
+
+pgpool:
+  enabled: true
+  service:
+    type: NodePort
+    nodePorts:
+      postgresql: 31432
