@@ -1,0 +1,1 @@
+helm install my-rabbitmq bitnami/rabbitmq -f rabbitmq-values.yaml
