@@ -1,0 +1,52 @@
+#cloud-config
+hostname: {hostname}
+package_update: true
+package_upgrade: true
+
+timezone: UTC
+
+packages:
+  - libicu74
+  - jq
+  - gpg
+  - curl
+  - wget
+  - git
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - libssl-dev
+  - openssl
+  - ubuntu-keyring
+  - coreutils
+
+users:
+  - name: {username}
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - {sshPubKey}
+
+runcmd:
+  # Install docker
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - sudo apt-get update
+  - sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+  - sudo usermod -aG docker {username}
+  - sudo systemctl enable docker
+  - sudo systemctl start docker
+  - sudo groupadd docker
+  - sudo usermod -aG docker {username}
+  - newgrp docker
+  - sudo systemctl enable docker.service
+  - sudo systemctl enable containerd.service
+  # Install Azure DevOps Agent
+  - mkdir /home/{username}/azagent && cd /home/{username}/azagent
+  - sudo curl -O https://vstsagentpackage.azureedge.net/agent/3.243.0/vsts-agent-linux-x64-3.243.0.tar.gz
+  - sudo tar zxvf vsts-agent-linux-x64-3.240.1.tar.gz
+  - sudo -u {username} bash config.sh --unattended --url {devOpsUrl} --auth pat --token {token} --pool default
+  - sudo bash svc.sh install
+  - sudo bash svc.sh start
