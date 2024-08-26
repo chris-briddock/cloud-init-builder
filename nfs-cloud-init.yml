@@ -1,0 +1,37 @@
+#cloud-config
+hostname: nfs-01
+package_update: true
+package_upgrade: true
+
+packages:
+  - libicu74
+  - jq
+  - gpg
+  - curl
+  - wget
+  - git
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - libssl-dev
+  - openssl
+  - ubuntu-keyring
+  - coreutils
+  - nfs-kernel-server  # Install NFS server package
+
+users:
+  - name: <username>
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-rsa <ssh key here>
+
+runcmd:
+  - mkdir -p /srv/nfs/kubedata  # Create the directory to be shared
+  - chown nobody:nogroup /srv/nfs/kubedata
+  - chmod 777 /srv/nfs/kubedata
+  - echo '/srv/nfs/kubedata *(rw,sync,no_subtree_check,no_root_squash)' | tee -a /etc/exports  # Configure the NFS export
+  - exportfs -rav  # Export the shared directory
+  - systemctl restart nfs-kernel-server  # Restart the NFS server to apply changes
