@@ -1,0 +1,50 @@
+helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+
+helm install nfs-subdir-external-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner --set nfs.server=<ip address> --set nfs.path=/srv/nfs/kubedata
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+spec:
+  capacity:
+    storage: 45Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-client
+  nfs:
+    server: <ip address>
+    path: "/srv/nfs/kubedata"
+--- 
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc
+spec:
+  storageClassName: nfs-client
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 45Gi
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-test-pod
+spec:
+  containers:
+  - name: busybox
+    image: busybox
+    command: ["/bin/sh"]
+    args: ["-c", "echo 'Hello from Kubernetes!' > /mnt/nfs/test.txt && tail -f /dev/null"]
+    volumeMounts:
+    - name: nfs-volume
+      mountPath: "/mnt/nfs"
+  volumes:
+  - name: nfs-volume
+    persistentVolumeClaim:
+      claimName: nfs-pvc  # This should match the name of your PVC
+
