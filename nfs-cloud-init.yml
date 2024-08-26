@@ -3,6 +3,8 @@ hostname: nfs-01
 package_update: true
 package_upgrade: true
 
+timezone: UTC
+
 packages:
   - libicu74
   - jq
