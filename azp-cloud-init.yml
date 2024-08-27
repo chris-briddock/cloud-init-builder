@@ -27,7 +27,7 @@ users:
     groups: users, admin
     shell: /bin/bash
     ssh_authorized_keys:
-      - {sshPubKey}
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC53fIFq5+zidgu0GNDGq2tDdJRXHgglsCWG/rPliOWxiVqbJQI3G/kJcQp+DtPI/sCzSl427nNsM+TG4K6h6h7pU3812Ng0WHXx5UyFqjklOQe/F1UygVg3jt0XfcbHFk9EIvcTbhxDfotW30XjAtW8PrT/nLzKIcwTkBYLm2C7abs3kxby69XGBUsHuDSaea2XE3/BGaNSXOBa0SPCxurChV8Gf/UJTqQDG6Yin04EHbQoEnwF9h+7rRUju3JVyqhMwTwMUiyRHlq//NmeeKQZTzD1Va2pMtBTkFs6XfuBCiysE2gg34srvvbQGDK22MV+SbBHqRVPJKDMGBF/AOSamjRYddwEx+CW+GZKcFeTwDVUe1wlEs9JNx3liOt0tPpDNTQDuGUCWqXeLNROai5jHDDS91j9OLh9Uv81kihg2wqM0c1aLx5dJfsc/zf7AKh5uzscsreU7wS0OsXzz4avoB0Nk0hpvpEnbs/WrZpdk+t4DghmeYda9v7168Nzhk=
 
 write_files:
   - path: /etc/docker/daemon.json
@@ -42,19 +42,20 @@ runcmd:
   - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
   - sudo apt-get update
   - sudo apt-get install -y docker-ce docker-ce-cli containerd.io
-  - sudo usermod -aG docker {username}
+  - sudo usermod -aG docker chris
   - sudo systemctl enable docker
   - sudo systemctl start docker
   - sudo groupadd docker
-  - sudo usermod -aG docker {username}
+  - sudo usermod -aG docker chris
   - newgrp docker
   - sudo systemctl enable docker.service
   - sudo systemctl enable containerd.service
   - sudo systemctl restart docker
   # Install Azure DevOps Agent
-  - mkdir /home/{username}/azagent && cd /home/{username}/azagent
+  - mkdir /home/chris/azagent && cd /home/chris/azagent
   - sudo curl -O https://vstsagentpackage.azureedge.net/agent/3.243.0/vsts-agent-linux-x64-3.243.0.tar.gz
   - sudo tar zxvf vsts-agent-linux-x64-3.243.0.tar.gz
-  - sudo -u {username} bash config.sh --unattended --url {devOpsUrl} --auth pat --token {token} --pool default
+  - sudo bash bin/installdependencies.sh
+  - sudo -u chris bash config.sh --unattended --url https://dev.azure.com/Authentica --auth pat --token aebngmajhkxyvvejnlegvl5zzekdybnqhcjf24uoij7qzgxjyczq --pool default
   - sudo bash svc.sh install
   - sudo bash svc.sh start
