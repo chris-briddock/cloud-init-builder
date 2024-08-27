@@ -1,5 +1,5 @@
 #cloud-config
-hostname: {hostname}
+hostname: azp-01
 package_update: true
 package_upgrade: true
 
@@ -22,12 +22,19 @@ packages:
   - coreutils
 
 users:
-  - name: {username}
+  - name: chris
     sudo: ALL=(ALL) NOPASSWD:ALL
     groups: users, admin
     shell: /bin/bash
     ssh_authorized_keys:
       - {sshPubKey}
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "insecure-registries" : ["172.16.16.51:9000", "registry.local:9000"]
+      }
 
 runcmd:
   # Install docker
@@ -43,10 +50,11 @@ runcmd:
   - newgrp docker
   - sudo systemctl enable docker.service
   - sudo systemctl enable containerd.service
+  - sudo systemctl restart docker
   # Install Azure DevOps Agent
   - mkdir /home/{username}/azagent && cd /home/{username}/azagent
   - sudo curl -O https://vstsagentpackage.azureedge.net/agent/3.243.0/vsts-agent-linux-x64-3.243.0.tar.gz
-  - sudo tar zxvf vsts-agent-linux-x64-3.240.1.tar.gz
+  - sudo tar zxvf vsts-agent-linux-x64-3.243.0.tar.gz
   - sudo -u {username} bash config.sh --unattended --url {devOpsUrl} --auth pat --token {token} --pool default
   - sudo bash svc.sh install
   - sudo bash svc.sh start
