@@ -1,0 +1,150 @@
+#cloud-config
+hostname: k8s-control-plane
+package_update: true
+package_upgrade: true
+timezone: UTC
+packages:
+  - libicu74
+  - jq
+  - gpg
+  - curl
+  - wget
+  - git
+  - apt-transport-https
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - libssl-dev
+  - openssl
+  - ubuntu-keyring
+  - coreutils
+  - conntrack
+  - socat
+users:
+  - name: chris
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN9XgomGsuLPyyGdQpAIK52I1hdkYNWETl7qglcRzq2e
+write_files:
+  - path: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+  - path: /etc/sysctl.d/k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+  - path: /etc/systemd/system/kubelet.service
+    content: |
+      [Unit]
+      Description=kubelet: The Kubernetes Node Agent
+      Documentation=https://kubernetes.io/docs/home/
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      ExecStart=/usr/local/bin/kubelet
+      Restart=always
+      StartLimitInterval=0
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+  - path: /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+    content: |
+      # Note: This dropin only works with kubeadm and kubelet v1.11+
+      [Service]
+      Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf"
+      Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"
+      # This is a file that "kubeadm init" and "kubeadm join" generates at runtime, populating the KUBELET_KUBEADM_ARGS variable dynamically
+      EnvironmentFile=-/var/lib/kubelet/kubeadm-flags.env
+      # This is a file that the user can use for overrides of the kubelet args as a last resort. Preferably, the user should use
+      # the .NodeRegistration.KubeletExtraArgs object in the configuration files instead. KUBELET_EXTRA_ARGS should be sourced from this file.
+      EnvironmentFile=-/etc/default/kubelet
+      ExecStart=
+      ExecStart=/usr/local/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+runcmd:
+  - modprobe overlay
+  - modprobe br_netfilter
+  - sysctl --system
+  - swapoff -a
+  - sed -i '/swap/d' /etc/fstab
+  # Install crictl
+  - wget https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.31.1/crictl-v1.31.1-linux-amd64.tar.gz
+  - tar zxvf crictl-v1.31.1-linux-amd64.tar.gz -C /usr/local/bin
+  - rm -f crictl-v1.31.1-linux-amd64.tar.gz
+  # Install docker
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  - apt-get update
+  - apt-get install -y docker-ce docker-ce-cli containerd.io
+  - systemctl enable docker
+  - systemctl start docker
+  - groupadd docker
+  - usermod -aG docker chris
+  - newgrp docker
+  - systemctl enable docker.service
+  - systemctl enable containerd.service
+  - systemctl restart docker
+  # Set up CRI for Docker
+  - wget https://github.com/Mirantis/cri-dockerd/releases/download/v0.3.14/cri-dockerd-0.3.14.amd64.tgz
+  - tar xvf cri-dockerd-0.3.14.amd64.tgz
+  - mv cri-dockerd/cri-dockerd /usr/local/bin/
+  - wget https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.service
+  - wget https://raw.githubusercontent.com/Mirantis/cri-dockerd/master/packaging/systemd/cri-docker.socket
+  - mv cri-docker.* /etc/systemd/system/
+  - sed -i -e 's,/usr/bin/cri-dockerd,/usr/local/bin/cri-dockerd,' /etc/systemd/system/cri-docker.service
+  - systemctl daemon-reload
+  - systemctl enable cri-docker.service
+  - systemctl enable --now cri-docker.socket
+  # Install runc and CNI plugins
+  - wget https://github.com/opencontainers/runc/releases/download/v1.1.13/runc.amd64
+  - install -m 755 runc.amd64 /usr/local/sbin/runc
+  - wget https://github.com/containernetworking/plugins/releases/download/v1.5.1/cni-plugins-linux-amd64-v1.5.1.tgz
+  - mkdir -p /opt/cni/bin
+  - tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.5.1.tgz
+  # Install Kubernetes components
+  - mkdir -p /usr/local/bin
+  - wget -O /usr/local/bin/kubeadm https://dl.k8s.io/v1.31.0/bin/linux/amd64/kubeadm
+  - wget -O /usr/local/bin/kubectl https://dl.k8s.io/v1.31.0/bin/linux/amd64/kubectl
+  - wget -O /usr/local/bin/kubelet https://dl.k8s.io/v1.31.0/bin/linux/amd64/kubelet
+  - wget -O /usr/local/bin/kube-apiserver https://dl.k8s.io/v1.31.0/bin/linux/amd64/kube-apiserver
+  - wget -O /usr/local/bin/apiextensions-apiserver https://dl.k8s.io/v1.31.0/bin/linux/amd64/apiextensions-apiserver
+  - wget -O /usr/local/bin/kube-controller-manager https://dl.k8s.io/v1.31.0/bin/linux/amd64/kube-controller-manager
+  - wget -O /usr/local/bin/kube-log-runner https://dl.k8s.io/v1.31.0/bin/linux/amd64/kube-log-runner
+  - wget -O /usr/local/bin/kube-aggregator https://dl.k8s.io/v1.31.0/bin/linux/amd64/kube-aggregator
+  - wget -O /usr/local/bin/kube-proxy https://dl.k8s.io/v1.31.0/bin/linux/amd64/kube-proxy
+  - wget -O /usr/local/bin/kube-scheduler https://dl.k8s.io/v1.31.0/bin/linux/amd64/kube-scheduler
+  - wget -O /usr/local/bin/mounter https://dl.k8s.io/v1.31.0/bin/linux/amd64/mounter
+  - wget -O /usr/local/bin/kubectl-convert https://dl.k8s.io/v1.31.0/bin/linux/amd64/kubectl-convert
+  - chmod +x /usr/local/bin/kube*
+  - chmod +x /usr/local/bin/apiextensions-apiserver
+  - chmod +x /usr/local/bin/mounter
+  # Install etcd
+  - ETCD_VER=v3.5.15
+  - GOOGLE_URL=https://storage.googleapis.com/etcd
+  - DOWNLOAD_URL=${GOOGLE_URL}
+  - rm -f /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
+  - rm -rf /tmp/etcd-download-test && mkdir -p /tmp/etcd-download-test
+  - curl -L ${DOWNLOAD_URL}/${ETCD_VER}/etcd-${ETCD_VER}-linux-amd64.tar.gz -o /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
+  - tar xzvf /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz -C /tmp/etcd-download-test --strip-components=1
+  - mv /tmp/etcd-download-test/etcd /usr/local/bin/
+  - mv /tmp/etcd-download-test/etcdctl /usr/local/bin/
+  - mv /tmp/etcd-download-test/etcdutl /usr/local/bin/
+  - rm -f /tmp/etcd-${ETCD_VER}-linux-amd64.tar.gz
+  - rm -rf /tmp/etcd-download-test
+  - chmod +x /usr/local/bin/etcd*
+  # Enable and start kubelet service
+  - systemctl daemon-reload
+  - systemctl enable kubelet
+  - systemctl start kubelet
+  # Initialize Kubernetes
+  - kubeadm init --pod-network-cidr=10.244.0.0/16 --cri-socket=unix:///var/run/cri-dockerd.sock
+  - mkdir -p /home/chris/.kube
+  - cp -i /etc/kubernetes/admin.conf /home/chris/.kube/config
+  - chown chris:chris /home/chris/.kube/config
+  # Install Flannel CNI
+  - kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
