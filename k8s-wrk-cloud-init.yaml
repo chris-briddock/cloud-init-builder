@@ -120,4 +120,23 @@ runcmd:
   - systemctl enable kubelet
   - systemctl start kubelet
   # Join the cluster
+  - MAX_RETRIES=10
+    RETRY_INTERVAL=30
+    CONTROL_PLANE_IP="172.16.16.96"
+      
+      for i in $(seq 1 $MAX_RETRIES); do
+        response=$(curl -s http://${CONTROL_PLANE_IP}:3000/join-info)
+        if [ $? -eq 0 ]; then
+          join_command=$(echo $response | jq -r .join_command)
+          if [ ! -z "$join_command" ]; then
+            echo "Joining cluster with command: $join_command"
+            $join_command --cri-socket=unix:///var/run/cri-dockerd.sock
+            exit 0
+          fi
+        fi
+        echo "Failed to get join command, retrying in $RETRY_INTERVAL seconds..."
+        sleep $RETRY_INTERVAL
+      done
+      echo "Failed to join cluster after $MAX_RETRIES attempts"
+      exit 1
   - kubeadm join ${MASTER_IP}:6443 --token ${TOKEN} --discovery-token-ca-cert-hash sha256:${HASH} --cri-socket=unix:///var/run/cri-dockerd.sock
