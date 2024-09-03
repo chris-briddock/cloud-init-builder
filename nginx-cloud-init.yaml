@@ -2,6 +2,13 @@
 hostname: nginx-lb-01
 package_update: true
 package_upgrade: true
+users:
+  - name: chris
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users, admin
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN9XgomGsuLPyyGdQpAIK52I1hdkYNWETl7qglcRzq2e
 packages:
   - curl
   - gnupg2
@@ -48,6 +55,40 @@ write_files:
                   proxy_set_header X-Forwarded-Proto $scheme;
               }
           }
+
+          upstream registry_backend {
+              server 172.16.16.96:30679;
+              server 172.16.16.103:30679;
+              server 172.16.16.104:30679;
+          }
+
+          server {
+              listen 9000;
+              location / {
+                  proxy_pass http://registry_backend;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+
+                  # Enable all HTTP verbs
+                  proxy_method $request_method;
+                  proxy_pass_request_headers on;
+                  proxy_pass_request_body on;
+
+                  # Increase timeouts for large image uploads
+                  proxy_connect_timeout 300;
+                  proxy_send_timeout 300;
+                  proxy_read_timeout 300;
+                  send_timeout 300;
+
+                  # Allow large uploads
+                  client_max_body_size 0;
+
+                  # Enable chunked transfer encoding
+                  chunked_transfer_encoding on;
+              }
+          }
       }
       stream {
           upstream sql_backend {
@@ -55,10 +96,10 @@ write_files:
             server 172.16.16.103:31432;
             server 172.16.16.104:31432;
           }
-        server {
-            listen 1433;
-            proxy_pass sql_backend;
-        }
+          server {
+              listen 1433;
+              proxy_pass sql_backend;
+          }
           upstream redis_backend {
               server 172.16.16.96:30379;
               server 172.16.16.103:30379;
@@ -105,13 +146,7 @@ write_files:
       Pin: origin nginx.org
       Pin: release o=nginx
       Pin-Priority: 900
-users:
-  - name: chris
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    groups: users, admin
-    shell: /bin/bash
-    ssh_authorized_keys:
-      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN9XgomGsuLPyyGdQpAIK52I1hdkYNWETl7qglcRzq2e
+    
 runcmd:
   - curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
   - echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu `lsb_release -cs` nginx" | sudo tee /etc/apt/sources.list.d/nginx.list
