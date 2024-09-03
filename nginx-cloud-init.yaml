@@ -8,7 +8,6 @@ packages:
   - ca-certificates
   - lsb-release
   - ubuntu-keyring
-
 write_files:
   - path: /etc/nginx/nginx.conf
     content: |
@@ -32,32 +31,48 @@ write_files:
           gzip on;
           include /etc/nginx/conf.d/*.conf;
           include /etc/nginx/sites-enabled/*;
-      }
-      stream {
-          upstream postgres_backend {
-            server 172.16.16.73:31432;
-            server 172.16.16.40:31432;
-            server 172.16.16.37:31432;
+
+          upstream aspire_dashboard_backend {
+              server 172.16.16.96:30888;
+              server 172.16.16.103:30888;
+              server 172.16.16.104:30888;
           }
 
+          server {
+              listen 18888;
+              location / {
+                  proxy_pass http://aspire_dashboard_backend;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+      }
+      stream {
+          upstream sql_backend {
+            server 172.16.16.96:31432;
+            server 172.16.16.103:31432;
+            server 172.16.16.104:31432;
+          }
         server {
-            listen 5432;
-            proxy_pass postgres_backend;
+            listen 1433;
+            proxy_pass sql_backend;
         }
           upstream redis_backend {
-              server 172.16.16.73:30379;
-              server 172.16.16.40:30379;
-              server 172.16.16.37:30379;
+              server 172.16.16.96:30379;
+              server 172.16.16.103:30379;
+              server 172.16.16.104:30379;
           }
           server {
               listen 6379;
               proxy_pass redis_backend;
           }
-          
+
           upstream rabbitmq_amqp_backend {
-              server 172.16.16.73:31015;
-              server 172.16.16.40:31015;
-              server 172.16.16.37:31015;
+              server 172.16.16.96:31302;
+              server 172.16.16.103:31302;
+              server 172.16.16.104:31302;
           }
           server {
               listen 5672;
@@ -65,31 +80,38 @@ write_files:
           }
           
           upstream rabbitmq_mgmt_backend {
-              server 172.16.16.73:31876;
-              server 172.16.16.40:31876;
-              server 172.16.16.37:31876;
+              server 172.16.16.96:30934;
+              server 172.16.16.103:30934;
+              server 172.16.16.104:30934;
           }
           server {
               listen 15672;
               proxy_pass rabbitmq_mgmt_backend;
           }
-      }
 
+          upstream aspire_otlp_backend {
+              server 172.16.16.96:30317;
+              server 172.16.16.103:30317;
+              server 172.16.16.104:30317;
+          }
+          server {
+              listen 4317;
+              proxy_pass aspire_otlp_backend;
+          }
+      }
   - path: /etc/apt/preferences.d/99nginx
     content: |
       Package: *
       Pin: origin nginx.org
       Pin: release o=nginx
       Pin-Priority: 900
-
 users:
   - name: chris
     sudo: ALL=(ALL) NOPASSWD:ALL
     groups: users, admin
     shell: /bin/bash
     ssh_authorized_keys:
-      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC53fIFq5+zidgu0GNDGq2tDdJRXHgglsCWG/rPliOWxiVqbJQI3G/kJcQp+DtPI/sCzSl427nNsM+TG4K6h6h7pU3812Ng0WHXx5UyFqjklOQe/F1UygVg3jt0XfcbHFk9EIvcTbhxDfotW30XjAtW8PrT/nLzKIcwTkBYLm2C7abs3kxby69XGBUsHuDSaea2XE3/BGaNSXOBa0SPCxurChV8Gf/UJTqQDG6Yin04EHbQoEnwF9h+7rRUju3JVyqhMwTwMUiyRHlq//NmeeKQZTzD1Va2pMtBTkFs6XfuBCiysE2gg34srvvbQGDK22MV+SbBHqRVPJKDMGBF/AOSamjRYddwEx+CW+GZKcFeTwDVUe1wlEs9JNx3liOt0tPpDNTQDuGUCWqXeLNROai5jHDDS91j9OLh9Uv81kihg2wqM0c1aLx5dJfsc/zf7AKh5uzscsreU7wS0OsXzz4avoB0Nk0hpvpEnbs/WrZpdk+t4DghmeYda9v7168Nzhk=
-
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN9XgomGsuLPyyGdQpAIK52I1hdkYNWETl7qglcRzq2e
 runcmd:
   - curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor | sudo tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
   - echo "deb [signed-by=/usr/share/keyrings/nginx-archive-keyring.gpg] http://nginx.org/packages/ubuntu `lsb_release -cs` nginx" | sudo tee /etc/apt/sources.list.d/nginx.list
