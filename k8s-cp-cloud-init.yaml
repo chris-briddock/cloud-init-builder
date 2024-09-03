@@ -66,7 +66,60 @@ write_files:
       EnvironmentFile=-/etc/default/kubelet
       ExecStart=
       ExecStart=/usr/local/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_CONFIG_ARGS $KUBELET_KUBEADM_ARGS $KUBELET_EXTRA_ARGS
+  - path: /home/chris/server.js
+    content: |
+      const express = require('express');
+      const { exec } = require('child_process');
+      const os = require('os');
+
+      const app = express();
+      const port = 3000;
+
+      app.get('/join-info', (req, res) => {
+        exec('kubeadm token create --print-join-command', (error, stdout, stderr) => {
+          if (error) {
+            console.error(`exec error: ${error}`);
+            return res.status(500).send('Error generating join command');
+          }
+          const joinCommand = stdout.trim();
+          const token = joinCommand.match(/--token (\S+)/)[1];
+          const discoveryHash = joinCommand.match(/--discovery-token-ca-cert-hash (\S+)/)[1];
+          const controlPlaneIP = Object.values(os.networkInterfaces())
+            .flat()
+            .filter(({family, internal}) => family === 'IPv4' && !internal)
+            .map(({address}) => address)[0];
+
+          res.json({ token, discoveryHash, controlPlaneIP });
+        });
+      });
+
+      app.listen(port, () => {
+        console.log(`Join info API listening at http://localhost:${port}`);
+      });
+
+  - path: /etc/systemd/system/join-info-api.service
+    content: |
+      [Unit]
+      Description=Join Info API
+      After=network.target
+
+      [Service]
+      ExecStart=/usr/bin/node /home/chris/server.js
+      Restart=always
+      User=chris
+      Environment=PATH=/home/chris/.nvm/versions/node/v20.10.0/bin:/usr/bin:/usr/local/bin
+      WorkingDirectory=/home/chris
+
+      [Install]
+      WantedBy=multi-user.target
 runcmd:
+  - export DEBIAN_FRONTEND=noninteractive
+  # system setup
+  - systemctl enable unattended-upgrades
+  - systemctl start unattended-upgrades
+  - systemctl enable auditd
+  - systemctl start auditd
+
   - modprobe overlay
   - modprobe br_netfilter
   - sysctl --system
@@ -148,3 +201,32 @@ runcmd:
   - chown chris:chris /home/chris/.kube/config
   # Install Flannel CNI
   - kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f https://raw.githubusercontent.com/flannel-io/flannel/master/Documentation/kube-flannel.yml
+
+  # Install Node.js
+  - curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+  - apt-get install -y nodejs
+  # Install necessary npm packages
+  - cd /home/chris && /usr/bin/npm install express
+
+  # Start the Join Info API service
+  - systemctl daemon-reload
+  - systemctl enable join-info-api.service
+  - systemctl start join-info-api.service
+
+  # Firewall setup
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 6443/tcp
+  - ufw allow 2379:2380/tcp
+  - ufw allow 10250/tcp
+  - ufw allow 10251/tcp
+  - ufw allow 10252/tcp
+  - ufw allow 3000/tcp
+  - ufw --force enable
+
+  # own home directory
+  - chown chris:chris /home/chris -R
+  - mkdir -p /usr/lib/node_modules
+  - chown -R chris:chris /usr/lib/node_modules
+  - chmod 775 /usr/lib/node_modules
